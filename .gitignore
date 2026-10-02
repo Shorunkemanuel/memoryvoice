@@ -19,6 +19,7 @@ dist/
 *.db
 *.sqlite
 *.sqlite3
+backend/data/
 
 # OS / editor
 .DS_Store

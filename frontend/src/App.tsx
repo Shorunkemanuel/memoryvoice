@@ -1,26 +1,233 @@
+import { useState, useRef, useEffect } from 'react'
+
+type RecordingStatus = 'idle' | 'recording' | 'recorded' | 'uploading' | 'uploaded' | 'error'
+
 export default function App() {
+  const [status, setStatus] = useState<RecordingStatus>('idle')
+  const [errorMessage, setErrorMessage] = useState<string>('')
+  const [duration, setDuration] = useState<number>(0)
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
+  const [audioUrl, setAudioUrl] = useState<string | null>(null)
+  const [uploadedFilename, setUploadedFilename] = useState<string | null>(null)
+
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null)
+  const audioChunksRef = useRef<Blob[]>([])
+  const timerRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    return () => {
+      if (audioUrl) {
+        URL.revokeObjectURL(audioUrl)
+      }
+      if (timerRef.current) {
+        window.clearInterval(timerRef.current)
+      }
+    }
+  }, [audioUrl])
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60)
+    const secs = seconds % 60
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`
+  }
+
+  const startRecording = async () => {
+    setErrorMessage('')
+    setUploadedFilename(null)
+    audioChunksRef.current = []
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      setStatus('error')
+      setErrorMessage('Audio recording is not supported in your browser.')
+      return
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      const mediaRecorder = new MediaRecorder(stream)
+      mediaRecorderRef.current = mediaRecorder
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data)
+        }
+      }
+
+      mediaRecorder.onstop = () => {
+        const mimeType = mediaRecorder.mimeType || 'audio/webm'
+        const blob = new Blob(audioChunksRef.current, { type: mimeType })
+        setAudioBlob(blob)
+        const url = URL.createObjectURL(blob)
+        setAudioUrl(url)
+        setStatus('recorded')
+
+        stream.getTracks().forEach((track) => track.stop())
+      }
+
+      mediaRecorder.start()
+      setStatus('recording')
+      setDuration(0)
+
+      timerRef.current = window.setInterval(() => {
+        setDuration((prev) => prev + 1)
+      }, 1000)
+    } catch (err: any) {
+      setStatus('error')
+      if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+        setErrorMessage('Microphone permission was denied. Please allow microphone access to record stories.')
+      } else {
+        setErrorMessage(`Could not start recording: ${err.message || 'Unknown error'}`)
+      }
+    }
+  }
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && status === 'recording') {
+      mediaRecorderRef.current.stop()
+      if (timerRef.current) {
+        window.clearInterval(timerRef.current)
+        timerRef.current = null
+      }
+    }
+  }
+
+  const uploadRecording = async () => {
+    if (!audioBlob) return
+
+    setStatus('uploading')
+    setErrorMessage('')
+
+    const formData = new FormData()
+    formData.append('file', audioBlob, 'memory-story.webm')
+
+    try {
+      const response = await fetch('/api/memories/audio', {
+        method: 'POST',
+        body: formData,
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.detail || `Upload failed with status ${response.status}`)
+      }
+
+      const data = await response.json()
+      setUploadedFilename(data.filename)
+      setStatus('uploaded')
+    } catch (err: any) {
+      setStatus('error')
+      setErrorMessage(err.message || 'Failed to upload recording.')
+    }
+  }
+
+  const resetRecording = () => {
+    if (audioUrl) {
+      URL.revokeObjectURL(audioUrl)
+    }
+    setAudioBlob(null)
+    setAudioUrl(null)
+    setUploadedFilename(null)
+    setDuration(0)
+    setErrorMessage('')
+    setStatus('idle')
+  }
+
   return (
-    <main className="container">
+    <main className="container" role="main">
       <header>
         <h1>MemoryVoice</h1>
         <p className="tagline">Turn the stories you tell into memories you can keep.</p>
       </header>
-      <div className="button-group">
-        <button
-          className="btn"
-          onClick={() => console.log('Record clicked')}
-          type="button"
-        >
-          Record a memory
-        </button>
-        <button
-          className="btn btn-secondary"
-          onClick={() => console.log('View clicked')}
-          type="button"
-        >
-          View memories
-        </button>
-      </div>
+
+      <section className="recorder-section" aria-label="Audio Recorder">
+        {status === 'idle' && (
+          <p className="status-message" aria-live="polite">Ready to record your memory.</p>
+        )}
+        {status === 'recording' && (
+          <div className="recording-active" aria-live="polite">
+            <span className="pulse-indicator" aria-hidden="true" />
+            <p className="status-message">Recording in progress... ({formatTime(duration)})</p>
+          </div>
+        )}
+        {status === 'recorded' && (
+          <p className="status-message" aria-live="polite">Recording captured successfully. Listen to preview or upload below.</p>
+        )}
+        {status === 'uploading' && (
+          <p className="status-message" aria-live="polite">Uploading your memory...</p>
+        )}
+        {status === 'uploaded' && (
+          <div className="success-box" aria-live="polite">
+            <p className="status-message success">Memory successfully uploaded!</p>
+            {uploadedFilename && <p className="filename-info">Stored as: {uploadedFilename}</p>}
+          </div>
+        )}
+        {status === 'error' && (
+          <p className="status-message error" aria-live="assertive">{errorMessage}</p>
+        )}
+
+        {audioUrl && (status === 'recorded' || status === 'uploading' || status === 'uploaded') && (
+          <div className="audio-preview">
+            <audio controls src={audioUrl} aria-label="Recorded audio playback preview">
+              Your browser does not support the audio element.
+            </audio>
+          </div>
+        )}
+
+        <div className="button-group">
+          {status === 'idle' && (
+            <button
+              className="btn"
+              onClick={startRecording}
+              type="button"
+              aria-label="Start recording a memory"
+            >
+              Record a memory
+            </button>
+          )}
+
+          {status === 'recording' && (
+            <button
+              className="btn btn-danger"
+              onClick={stopRecording}
+              type="button"
+              aria-label="Stop recording"
+            >
+              Stop recording
+            </button>
+          )}
+
+          {(status === 'recorded' || status === 'error') && audioBlob && (
+            <button
+              className="btn"
+              onClick={uploadRecording}
+              type="button"
+              aria-label="Upload recording"
+            >
+              Upload recording
+            </button>
+          )}
+
+          {(status === 'recorded' || status === 'uploaded' || status === 'error') && (
+            <button
+              className="btn btn-secondary"
+              onClick={resetRecording}
+              type="button"
+              aria-label="Record another memory"
+            >
+              Record another
+            </button>
+          )}
+
+          <button
+            className="btn btn-secondary"
+            onClick={() => console.log('View clicked')}
+            type="button"
+            aria-label="View saved memories (currently disabled)"
+          >
+            View memories
+          </button>
+        </div>
+      </section>
     </main>
   )
 }
