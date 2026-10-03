@@ -33,4 +33,7 @@ services:
     staticPublishPath: dist
     envVars:
       - key: VITE_API_URL
-        sync: false
+        fromService:
+          name: memoryvoice-api
+          type: web
+          envVarKey: RENDER_EXTERNAL_URL
