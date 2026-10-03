@@ -229,6 +229,86 @@ h1 {
   gap: 1rem;
 }
 
+.library-section,
+.ask-section {
+  width: 100%;
+  max-width: 600px;
+}
+
+.library-section > h2,
+.ask-section > h2 {
+  margin: 0 0 1rem;
+  color: #1e293b;
+  font-size: 1.5rem;
+}
+
+.memory-library-list {
+  display: grid;
+  gap: 0.25rem;
+}
+
+.memory-library-list .memory-card {
+  margin: 0 0 1rem;
+}
+
+.memory-library-list .memory-card h3,
+.answer-box h3 {
+  margin: 0 0 1rem;
+  color: #0f172a;
+  font-size: 1.2rem;
+}
+
+.memory-fields h4 {
+  margin: 0 0 0.5rem;
+  color: #1e293b;
+  font-size: 1rem;
+}
+
+.ask-section form {
+  display: grid;
+  gap: 0.75rem;
+  text-align: left;
+}
+
+.ask-section label {
+  color: #1e293b;
+  font-weight: 600;
+}
+
+.ask-section textarea {
+  box-sizing: border-box;
+  width: 100%;
+  resize: vertical;
+  padding: 0.75rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  color: #0f172a;
+  background: #fff;
+  font: inherit;
+}
+
+.ask-section textarea:focus-visible {
+  outline: 3px solid #93c5fd;
+  outline-offset: 2px;
+}
+
+.answer-box {
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 1rem;
+  padding: 1rem;
+  text-align: left;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 0.5rem;
+}
+
+.answer-box p {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
 .memory-fields h3 {
   margin: 0 0 0.5rem;
   color: #1e293b;

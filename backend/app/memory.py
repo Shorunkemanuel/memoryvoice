@@ -158,3 +158,91 @@ def persist_memory(memory: dict[str, Any]) -> dict[str, Any]:
         )
 
     return validated_memory
+
+
+def list_memories() -> list[dict[str, Any]]:
+    assistant_id = _required_setting("BACKBOARD_ASSISTANT_ID")
+    headers = _backboard_headers()
+
+    try:
+        response = httpx.get(
+            f"{_backboard_api_url()}/assistants/{assistant_id}/memories",
+            headers=headers,
+            timeout=30,
+        )
+    except httpx.HTTPError as exc:
+        raise BackboardAPIError("Backboard memory retrieval request failed.") from exc
+
+    if response.status_code >= 400:
+        raise BackboardAPIError(
+            f"Backboard memory retrieval failed with status {response.status_code}: {response.text}"
+        )
+
+    try:
+        response_json = response.json()
+    except ValueError as exc:
+        raise MalformedModelResponseError("Backboard returned non-JSON memory data.") from exc
+
+    if not isinstance(response_json, dict) or not isinstance(response_json.get("memories"), list):
+        raise MalformedModelResponseError("Backboard returned a malformed memory list.")
+
+    memories = []
+    for item in response_json["memories"]:
+        if not isinstance(item, dict) or not isinstance(item.get("content"), str):
+            raise MalformedModelResponseError("Backboard returned a malformed memory.")
+        memories.append(_coerce_memory_payload(item["content"]))
+
+    return memories
+
+
+def answer_memory_question(question: str) -> str:
+    if not question or not question.strip():
+        raise ValueError("Question is required.")
+
+    provider = _required_setting("BACKBOARD_LLM_PROVIDER")
+    model = _required_setting("BACKBOARD_MODEL")
+    assistant_id = _required_setting("BACKBOARD_ASSISTANT_ID")
+    headers = _backboard_headers()
+
+    instruction = (
+        "Answer the user's question using only information available in the persisted memories "
+        "retrieved for this assistant. Do not use outside knowledge, make inferences, or invent "
+        "facts. If the saved memories do not explicitly support an answer, respond exactly: "
+        "\"That information is not available in your saved memories.\""
+    )
+    payload = {
+        "assistant_id": assistant_id,
+        "content": question.strip(),
+        "system_prompt": instruction,
+        "llm_provider": provider,
+        "model_name": model,
+        "memory": "Readonly",
+        "stream": False,
+        "json_output": False,
+    }
+
+    try:
+        response = httpx.post(
+            f"{_backboard_api_url()}/threads/messages",
+            headers=headers,
+            json=payload,
+            timeout=30,
+        )
+    except httpx.HTTPError as exc:
+        raise BackboardAPIError("Backboard memory question request failed.") from exc
+
+    if response.status_code >= 400:
+        raise BackboardAPIError(
+            f"Backboard memory question failed with status {response.status_code}: {response.text}"
+        )
+
+    try:
+        response_json = response.json()
+    except ValueError as exc:
+        raise MalformedModelResponseError("Backboard returned non-JSON answer data.") from exc
+
+    answer = response_json.get("content") if isinstance(response_json, dict) else None
+    if not isinstance(answer, str) or not answer.strip():
+        raise MalformedModelResponseError("Backboard returned no answer content.")
+
+    return answer.strip()

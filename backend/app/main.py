@@ -5,14 +5,16 @@ import uuid
 from typing import Optional
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, StrictStr
 
 from .memory import (
     BackboardAPIError,
     BackboardConfigurationError,
     MalformedModelResponseError,
     MissingTranscriptError,
+    answer_memory_question,
     extract_memory,
+    list_memories,
     persist_memory,
 )
 from .transcription import transcribe_audio
@@ -29,9 +31,66 @@ class MemoryRequest(BaseModel):
     transcript: Optional[str] = None
 
 
+class MemoryQuestionRequest(BaseModel):
+    question: StrictStr
+
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+
+@app.get("/api/memories")
+async def get_memories():
+    try:
+        memories = list_memories()
+    except BackboardConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+    except BackboardAPIError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Backboard memory service failed. Please try again.",
+        ) from exc
+    except MalformedModelResponseError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Backboard returned malformed memory data.",
+        ) from exc
+
+    return {"memories": memories}
+
+
+@app.post("/api/memories/ask")
+async def ask_memories(question_request: MemoryQuestionRequest):
+    question = question_request.question.strip()
+    if not question:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Question is required.",
+        )
+
+    try:
+        answer = answer_memory_question(question)
+    except BackboardConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+    except BackboardAPIError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Backboard memory service failed. Please try again.",
+        ) from exc
+    except MalformedModelResponseError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Backboard returned a malformed answer.",
+        ) from exc
+
+    return {"answer": answer}
 
 
 @app.post("/api/memories")

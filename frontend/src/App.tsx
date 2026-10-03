@@ -11,6 +11,17 @@ type StructuredMemory = {
   details: string[]
 }
 
+const isStructuredMemory = (value: unknown): value is StructuredMemory => {
+  if (!value || typeof value !== 'object') return false
+  const memory = value as Record<string, unknown>
+  return (
+    typeof memory.title === 'string' &&
+    ['people', 'places', 'dates', 'events', 'details'].every(
+      (field) => Array.isArray(memory[field]) && memory[field].every((item) => typeof item === 'string'),
+    )
+  )
+}
+
 export default function App() {
   const [status, setStatus] = useState<RecordingStatus>('idle')
   const [errorMessage, setErrorMessage] = useState<string>('')
@@ -24,11 +35,46 @@ export default function App() {
   const [isCreatingMemory, setIsCreatingMemory] = useState(false)
   const [memoryError, setMemoryError] = useState('')
   const [memory, setMemory] = useState<StructuredMemory | null>(null)
+  const [savedMemories, setSavedMemories] = useState<StructuredMemory[]>([])
+  const [isLoadingMemories, setIsLoadingMemories] = useState(false)
+  const [memoriesError, setMemoriesError] = useState('')
+  const [question, setQuestion] = useState('')
+  const [answer, setAnswer] = useState('')
+  const [askError, setAskError] = useState('')
+  const [isAsking, setIsAsking] = useState(false)
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
   const timerRef = useRef<number | null>(null)
   const transcriptionInProgressRef = useRef(false)
+  const askingInProgressRef = useRef(false)
+
+  const loadMemories = async () => {
+    setIsLoadingMemories(true)
+    setMemoriesError('')
+
+    try {
+      const response = await fetch('/api/memories')
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(data.detail || `Unable to load memories (status ${response.status}).`)
+      }
+      if (!Array.isArray(data.memories) || !data.memories.every(isStructuredMemory)) {
+        throw new Error('The server returned an invalid memory list.')
+      }
+      setSavedMemories(data.memories)
+    } catch (err: unknown) {
+      setMemoriesError(
+        err instanceof Error ? err.message : 'Unable to load memories. Please try again.',
+      )
+    } finally {
+      setIsLoadingMemories(false)
+    }
+  }
+
+  useEffect(() => {
+    void loadMemories()
+  }, [])
 
   useEffect(() => {
     return () => {
@@ -200,12 +246,45 @@ export default function App() {
       }
 
       setMemory(data.memory)
+      await loadMemories()
     } catch (err: unknown) {
       setMemoryError(
         err instanceof Error ? err.message : 'Failed to create memory. Please try again.',
       )
     } finally {
       setIsCreatingMemory(false)
+    }
+  }
+
+  const askMemory = async () => {
+    if (!question.trim() || askingInProgressRef.current) return
+
+    askingInProgressRef.current = true
+    setIsAsking(true)
+    setAnswer('')
+    setAskError('')
+
+    try {
+      const response = await fetch('/api/memories/ask', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ question }),
+      })
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(data.detail || `Unable to answer question (status ${response.status}).`)
+      }
+      if (typeof data.answer !== 'string' || !data.answer.trim()) {
+        throw new Error('The server did not return an answer.')
+      }
+      setAnswer(data.answer)
+    } catch (err: unknown) {
+      setAskError(err instanceof Error ? err.message : 'Unable to answer. Please try again.')
+    } finally {
+      askingInProgressRef.current = false
+      setIsAsking(false)
     }
   }
 
@@ -386,15 +465,75 @@ export default function App() {
             </button>
           )}
 
-          <button
-            className="btn btn-secondary"
-            onClick={() => console.log('View clicked')}
-            type="button"
-            aria-label="View saved memories (currently disabled)"
-          >
+          <button className="btn btn-secondary" onClick={() => document.getElementById('memory-library')?.scrollIntoView({ behavior: 'smooth' })} type="button">
             View memories
           </button>
         </div>
+      </section>
+
+      <section className="library-section" id="memory-library" aria-labelledby="memory-library-heading">
+        <h2 id="memory-library-heading">Memory Library</h2>
+        {isLoadingMemories && <p className="status-message" role="status" aria-live="polite">Loading saved memories...</p>}
+        {memoriesError && (
+          <div className="library-error">
+            <p className="status-message error" role="alert">{memoriesError}</p>
+            <button className="btn btn-secondary" onClick={() => void loadMemories()} type="button" disabled={isLoadingMemories}>
+              Retry
+            </button>
+          </div>
+        )}
+        {!isLoadingMemories && !memoriesError && savedMemories.length === 0 && (
+          <p className="status-message">No saved memories yet. Create a memory to see it here.</p>
+        )}
+        {savedMemories.length > 0 && (
+          <div className="memory-library-list">
+            {savedMemories.map((savedMemory, index) => (
+              <article className="memory-card" key={`${savedMemory.title}-${index}`}>
+                <h3>{savedMemory.title || 'Memory'}</h3>
+                <div className="memory-fields">
+                  {([
+                    ['People', savedMemory.people],
+                    ['Places', savedMemory.places],
+                    ['Dates', savedMemory.dates],
+                    ['Events', savedMemory.events],
+                    ['Details', savedMemory.details],
+                  ] as const).map(([label, items]) => items.length > 0 && (
+                    <div key={label}>
+                      <h4>{label}</h4>
+                      <ul>{items.map((item, itemIndex) => <li key={`${item}-${itemIndex}`}>{item}</li>)}</ul>
+                    </div>
+                  ))}
+                </div>
+              </article>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="ask-section" aria-labelledby="ask-memories-heading">
+        <h2 id="ask-memories-heading">Ask Your Memories</h2>
+        <form onSubmit={(event) => { event.preventDefault(); void askMemory() }}>
+          <label htmlFor="memory-question">Ask your memories</label>
+          <textarea
+            id="memory-question"
+            value={question}
+            onChange={(event) => setQuestion(event.target.value)}
+            placeholder="What did I tell you about my grandmother?"
+            rows={3}
+            disabled={isAsking}
+          />
+          <button className="btn" type="submit" disabled={isAsking || !question.trim()} aria-busy={isAsking}>
+            {isAsking ? 'Asking...' : 'Ask'}
+          </button>
+        </form>
+        {isAsking && <p className="status-message" role="status" aria-live="polite">Searching your saved memories...</p>}
+        {askError && <p className="status-message error" role="alert">{askError}</p>}
+        {answer && (
+          <div className="answer-box" aria-labelledby="memory-answer-heading">
+            <h3 id="memory-answer-heading">Answer</h3>
+            <p aria-live="polite">{answer}</p>
+          </div>
+        )}
       </section>
     </main>
   )
