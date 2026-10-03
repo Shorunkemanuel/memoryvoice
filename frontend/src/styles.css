@@ -79,6 +79,11 @@ h1 {
   transform: scale(0.98);
 }
 
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
 .btn:focus-visible {
   outline: 3px solid #93c5fd;
   outline-offset: 2px;
@@ -174,6 +179,30 @@ h1 {
 .audio-preview audio {
   width: 100%;
   max-width: 400px;
+}
+
+.transcript-box {
+  width: 100%;
+  max-width: 600px;
+  box-sizing: border-box;
+  margin: 1rem 0;
+  padding: 1rem;
+  text-align: left;
+  overflow-wrap: anywhere;
+  background-color: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+}
+
+.transcript-box h2 {
+  margin: 0 0 0.5rem;
+  color: #1e293b;
+  font-size: 1.25rem;
+}
+
+.transcript-box p {
+  margin: 0;
+  white-space: pre-wrap;
 }
 
 @media (max-width: 600px) {

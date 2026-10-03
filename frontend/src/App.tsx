@@ -9,10 +9,14 @@ export default function App() {
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null)
   const [audioUrl, setAudioUrl] = useState<string | null>(null)
   const [uploadedFilename, setUploadedFilename] = useState<string | null>(null)
+  const [isTranscribing, setIsTranscribing] = useState(false)
+  const [transcriptionError, setTranscriptionError] = useState('')
+  const [transcript, setTranscript] = useState('')
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
   const timerRef = useRef<number | null>(null)
+  const transcriptionInProgressRef = useRef(false)
 
   useEffect(() => {
     return () => {
@@ -96,6 +100,8 @@ export default function App() {
 
     setStatus('uploading')
     setErrorMessage('')
+    setTranscriptionError('')
+    setTranscript('')
 
     const formData = new FormData()
     formData.append('file', audioBlob, 'memory-story.webm')
@@ -120,7 +126,45 @@ export default function App() {
     }
   }
 
+  const transcribeRecording = async () => {
+    if (!audioBlob || transcriptionInProgressRef.current) return
+
+    transcriptionInProgressRef.current = true
+    setIsTranscribing(true)
+    setTranscriptionError('')
+    setTranscript('')
+
+    const formData = new FormData()
+    formData.append('file', audioBlob, 'memory-story.webm')
+
+    try {
+      const response = await fetch('/api/memories/transcribe', {
+        method: 'POST',
+        body: formData,
+      })
+      const data = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(data.detail || `Transcription failed with status ${response.status}`)
+      }
+
+      if (typeof data.transcript !== 'string' || !data.transcript.trim()) {
+        throw new Error('The transcription response did not include a transcript. Please try again.')
+      }
+
+      setTranscript(data.transcript)
+    } catch (err: unknown) {
+      setTranscriptionError(
+        err instanceof Error ? err.message : 'Failed to transcribe recording. Please try again.',
+      )
+    } finally {
+      transcriptionInProgressRef.current = false
+      setIsTranscribing(false)
+    }
+  }
+
   const resetRecording = () => {
+    if (transcriptionInProgressRef.current) return
     if (audioUrl) {
       URL.revokeObjectURL(audioUrl)
     }
@@ -129,6 +173,10 @@ export default function App() {
     setUploadedFilename(null)
     setDuration(0)
     setErrorMessage('')
+    setTranscriptionError('')
+    setTranscript('')
+    setIsTranscribing(false)
+    transcriptionInProgressRef.current = false
     setStatus('idle')
   }
 
@@ -163,6 +211,20 @@ export default function App() {
         )}
         {status === 'error' && (
           <p className="status-message error" aria-live="assertive">{errorMessage}</p>
+        )}
+        {isTranscribing && (
+          <p className="status-message" role="status" aria-live="polite" aria-busy="true">
+            Transcribing your memory...
+          </p>
+        )}
+        {transcriptionError && (
+          <p className="status-message error" role="alert">{transcriptionError}</p>
+        )}
+        {transcript && (
+          <section className="transcript-box" aria-labelledby="transcript-heading">
+            <h2 id="transcript-heading">Transcript</h2>
+            <p>{transcript}</p>
+          </section>
         )}
 
         {audioUrl && (status === 'recorded' || status === 'uploading' || status === 'uploaded') && (
@@ -207,11 +269,24 @@ export default function App() {
             </button>
           )}
 
+          {status === 'uploaded' && !transcript && (
+            <button
+              className="btn"
+              onClick={transcribeRecording}
+              type="button"
+              disabled={isTranscribing}
+              aria-label={transcriptionError ? 'Retry transcription' : 'Transcribe recording'}
+            >
+              {isTranscribing ? 'Transcribing...' : transcriptionError ? 'Retry transcription' : 'Transcribe'}
+            </button>
+          )}
+
           {(status === 'recorded' || status === 'uploaded' || status === 'error') && (
             <button
               className="btn btn-secondary"
               onClick={resetRecording}
               type="button"
+              disabled={isTranscribing}
               aria-label="Record another memory"
             >
               Record another

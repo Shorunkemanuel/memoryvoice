@@ -1,13 +1,18 @@
+import logging
 import os
 import pathlib
+import tempfile
 import uuid
 from typing import Optional
 from fastapi import FastAPI, UploadFile, File, HTTPException, status
+from .transcription import transcribe_audio
 
 app = FastAPI(title="MemoryVoice Backend")
+logger = logging.getLogger(__name__)
 
 UPLOAD_DIR = pathlib.Path(__file__).resolve().parent.parent / "data" / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+SUPPORTED_AUDIO_EXTENSIONS = {".webm", ".mp4", ".ogg", ".wav", ".m4a", ".mp3", ".3gp", ".flac"}
 
 @app.get("/health")
 def health_check():
@@ -51,3 +56,42 @@ async def upload_audio(file: Optional[UploadFile] = File(None)):
         "status": "received",
         "filename": safe_filename
     }
+
+@app.post("/api/memories/transcribe")
+async def transcribe_memory(file: UploadFile = File(...)):
+    suffix = pathlib.Path(file.filename or "").suffix.lower()
+    if suffix not in SUPPORTED_AUDIO_EXTENSIONS:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Unsupported audio format. Please upload a supported audio file."
+        )
+
+    temp_file_path = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=UPLOAD_DIR, suffix=suffix, delete=False) as temp_file:
+            temp_file_path = pathlib.Path(temp_file.name)
+            while contents := await file.read(1024 * 1024):
+                temp_file.write(contents)
+
+        if temp_file_path.stat().st_size == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Uploaded file is empty."
+            )
+
+        transcript = transcribe_audio(str(temp_file_path))
+        return {
+            "status": "transcribed",
+            "transcript": transcript
+        }
+    except HTTPException:
+        raise
+    except Exception:
+        logger.exception("Transcription failed")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Transcription failed. Check that the audio file is valid and try again."
+        )
+    finally:
+        if temp_file_path is not None:
+            temp_file_path.unlink(missing_ok=True)
