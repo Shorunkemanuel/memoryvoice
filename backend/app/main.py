@@ -1,10 +1,20 @@
 import logging
-import os
 import pathlib
 import tempfile
 import uuid
 from typing import Optional
+
 from fastapi import FastAPI, UploadFile, File, HTTPException, status
+from pydantic import BaseModel
+
+from .memory import (
+    BackboardAPIError,
+    BackboardConfigurationError,
+    MalformedModelResponseError,
+    MissingTranscriptError,
+    extract_memory,
+    persist_memory,
+)
 from .transcription import transcribe_audio
 
 app = FastAPI(title="MemoryVoice Backend")
@@ -14,9 +24,44 @@ UPLOAD_DIR = pathlib.Path(__file__).resolve().parent.parent / "data" / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 SUPPORTED_AUDIO_EXTENSIONS = {".webm", ".mp4", ".ogg", ".wav", ".m4a", ".mp3", ".3gp", ".flac"}
 
+
+class MemoryRequest(BaseModel):
+    transcript: Optional[str] = None
+
+
 @app.get("/health")
 def health_check():
     return {"status": "ok"}
+
+
+@app.post("/api/memories")
+async def create_memory(memory_request: MemoryRequest):
+    transcript = (memory_request.transcript or "").strip()
+    if not transcript:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Transcript is required.")
+
+    try:
+        memory = extract_memory(transcript)
+        persisted_memory = persist_memory(memory)
+    except MissingTranscriptError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    except BackboardConfigurationError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(exc),
+        ) from exc
+    except BackboardAPIError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Backboard memory service failed. Please try again.",
+        ) from exc
+    except MalformedModelResponseError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="The model returned malformed memory data.",
+        ) from exc
+
+    return {"status": "created", "memory": persisted_memory}
 
 @app.post("/api/memories/audio")
 async def upload_audio(file: Optional[UploadFile] = File(None)):

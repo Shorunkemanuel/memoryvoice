@@ -2,6 +2,15 @@ import { useState, useRef, useEffect } from 'react'
 
 type RecordingStatus = 'idle' | 'recording' | 'recorded' | 'uploading' | 'uploaded' | 'error'
 
+type StructuredMemory = {
+  title: string
+  people: string[]
+  places: string[]
+  dates: string[]
+  events: string[]
+  details: string[]
+}
+
 export default function App() {
   const [status, setStatus] = useState<RecordingStatus>('idle')
   const [errorMessage, setErrorMessage] = useState<string>('')
@@ -12,6 +21,9 @@ export default function App() {
   const [isTranscribing, setIsTranscribing] = useState(false)
   const [transcriptionError, setTranscriptionError] = useState('')
   const [transcript, setTranscript] = useState('')
+  const [isCreatingMemory, setIsCreatingMemory] = useState(false)
+  const [memoryError, setMemoryError] = useState('')
+  const [memory, setMemory] = useState<StructuredMemory | null>(null)
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null)
   const audioChunksRef = useRef<Blob[]>([])
@@ -163,6 +175,40 @@ export default function App() {
     }
   }
 
+  const createMemory = async () => {
+    if (!transcript || isCreatingMemory) return
+
+    setIsCreatingMemory(true)
+    setMemoryError('')
+
+    try {
+      const response = await fetch('/api/memories', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ transcript }),
+      })
+
+      const data = await response.json().catch(() => ({}))
+      if (!response.ok) {
+        throw new Error(data.detail || 'Unable to create memory.')
+      }
+
+      if (!data.memory || typeof data.memory !== 'object') {
+        throw new Error('The server did not return a valid memory.')
+      }
+
+      setMemory(data.memory)
+    } catch (err: unknown) {
+      setMemoryError(
+        err instanceof Error ? err.message : 'Failed to create memory. Please try again.',
+      )
+    } finally {
+      setIsCreatingMemory(false)
+    }
+  }
+
   const resetRecording = () => {
     if (transcriptionInProgressRef.current) return
     if (audioUrl) {
@@ -175,6 +221,8 @@ export default function App() {
     setErrorMessage('')
     setTranscriptionError('')
     setTranscript('')
+    setMemory(null)
+    setMemoryError('')
     setIsTranscribing(false)
     transcriptionInProgressRef.current = false
     setStatus('idle')
@@ -224,6 +272,51 @@ export default function App() {
           <section className="transcript-box" aria-labelledby="transcript-heading">
             <h2 id="transcript-heading">Transcript</h2>
             <p>{transcript}</p>
+          </section>
+        )}
+
+        {memoryError && (
+          <p className="status-message error" role="alert">{memoryError}</p>
+        )}
+
+        {transcript && !memory && (
+          <button
+            className="btn"
+            onClick={createMemory}
+            type="button"
+            disabled={isCreatingMemory}
+            aria-live="polite"
+            aria-busy={isCreatingMemory}
+          >
+            {isCreatingMemory ? 'Creating memory...' : 'Create Memory'}
+          </button>
+        )}
+
+        {memory && (
+          <section className="memory-card" aria-labelledby="memory-heading">
+            <h2 id="memory-heading">{memory.title || 'Memory'}</h2>
+            <div className="memory-fields">
+              <div>
+                <h3>People</h3>
+                <ul>{memory.people.length ? memory.people.map((person) => <li key={person}>{person}</li>) : <li>None</li>}</ul>
+              </div>
+              <div>
+                <h3>Places</h3>
+                <ul>{memory.places.length ? memory.places.map((place) => <li key={place}>{place}</li>) : <li>None</li>}</ul>
+              </div>
+              <div>
+                <h3>Dates</h3>
+                <ul>{memory.dates.length ? memory.dates.map((date) => <li key={date}>{date}</li>) : <li>None</li>}</ul>
+              </div>
+              <div>
+                <h3>Events</h3>
+                <ul>{memory.events.length ? memory.events.map((event) => <li key={event}>{event}</li>) : <li>None</li>}</ul>
+              </div>
+              <div>
+                <h3>Details</h3>
+                <ul>{memory.details.length ? memory.details.map((detail) => <li key={detail}>{detail}</li>) : <li>None</li>}</ul>
+              </div>
+            </div>
           </section>
         )}
 

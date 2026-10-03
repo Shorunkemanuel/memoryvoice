@@ -205,6 +205,46 @@ h1 {
   white-space: pre-wrap;
 }
 
+.memory-card {
+  width: 100%;
+  max-width: 600px;
+  box-sizing: border-box;
+  margin: 1rem 0;
+  padding: 1rem;
+  text-align: left;
+  background-color: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 0.5rem;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+.memory-card h2 {
+  margin: 0 0 1rem;
+  color: #0f172a;
+  font-size: 1.35rem;
+}
+
+.memory-fields {
+  display: grid;
+  gap: 1rem;
+}
+
+.memory-fields h3 {
+  margin: 0 0 0.5rem;
+  color: #1e293b;
+  font-size: 1rem;
+}
+
+.memory-fields ul {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+
+.memory-fields li {
+  margin-bottom: 0.35rem;
+  color: #334155;
+}
+
 @media (max-width: 600px) {
   h1 {
     font-size: 2.5rem;
