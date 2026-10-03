@@ -1,10 +1,12 @@
 import logging
+import os
 import pathlib
 import tempfile
 import uuid
 from typing import Optional
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, StrictStr
 
 from .memory import (
@@ -21,6 +23,15 @@ from .transcription import transcribe_audio
 
 app = FastAPI(title="MemoryVoice Backend")
 logger = logging.getLogger(__name__)
+
+frontend_origin = os.getenv("FRONTEND_ORIGIN")
+if frontend_origin:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[frontend_origin],
+        allow_methods=["GET", "POST"],
+        allow_headers=["Content-Type"],
+    )
 
 UPLOAD_DIR = pathlib.Path(__file__).resolve().parent.parent / "data" / "uploads"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)

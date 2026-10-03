@@ -11,6 +11,8 @@ type StructuredMemory = {
   details: string[]
 }
 
+const API_BASE_URL = (import.meta.env.VITE_API_URL ?? '').replace(/\/$/, '')
+
 const isStructuredMemory = (value: unknown): value is StructuredMemory => {
   if (!value || typeof value !== 'object') return false
   const memory = value as Record<string, unknown>
@@ -54,7 +56,7 @@ export default function App() {
     setMemoriesError('')
 
     try {
-      const response = await fetch('/api/memories')
+      const response = await fetch(`${API_BASE_URL}/api/memories`)
       const data = await response.json().catch(() => ({}))
       if (!response.ok) {
         throw new Error(data.detail || `Unable to load memories (status ${response.status}).`)
@@ -165,7 +167,7 @@ export default function App() {
     formData.append('file', audioBlob, 'memory-story.webm')
 
     try {
-      const response = await fetch('/api/memories/audio', {
+      const response = await fetch(`${API_BASE_URL}/api/memories/audio`, {
         method: 'POST',
         body: formData,
       })
@@ -196,7 +198,7 @@ export default function App() {
     formData.append('file', audioBlob, 'memory-story.webm')
 
     try {
-      const response = await fetch('/api/memories/transcribe', {
+      const response = await fetch(`${API_BASE_URL}/api/memories/transcribe`, {
         method: 'POST',
         body: formData,
       })
@@ -228,7 +230,7 @@ export default function App() {
     setMemoryError('')
 
     try {
-      const response = await fetch('/api/memories', {
+      const response = await fetch(`${API_BASE_URL}/api/memories`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -265,7 +267,7 @@ export default function App() {
     setAskError('')
 
     try {
-      const response = await fetch('/api/memories/ask', {
+      const response = await fetch(`${API_BASE_URL}/api/memories/ask`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

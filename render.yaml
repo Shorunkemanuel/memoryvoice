@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: memoryvoice-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: BACKBOARD_API_KEY
+        sync: false
+      - key: BACKBOARD_API_URL
+        value: https://app.backboard.io/api
+      - key: BACKBOARD_LLM_PROVIDER
+        sync: false
+      - key: BACKBOARD_MODEL
+        sync: false
+      - key: BACKBOARD_ASSISTANT_ID
+        sync: false
+      - key: DATABASE_URL
+        value: sqlite:///./memoryvoice.db
+      - key: WHISPER_MODEL
+        value: tiny
+      - key: FRONTEND_ORIGIN
+        sync: false
+
+  - type: web
+    name: memoryvoice-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_URL
+        sync: false
